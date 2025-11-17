@@ -117,7 +117,7 @@ def subaddrMatchRows(rows, unit):
     unitrows = []
     nounitrows = []
     for row in rows:
-        if row["AddressSecLowNumber"] == "":
+        if (row["RecordType"] != "H" and row["RecordType"] != "F") or row["AddressSecLowNumber"] == "":
             nounitrows.append(row)
             continue
         if row["AddressSecLowNumber"] <= unit and row["AddressSecHighNumber"] >= unit:
@@ -216,11 +216,11 @@ def getZIP4(number, street, unit, state, lat, lon, city=False, zip=False, county
 
     # Build a list of queries to run, starting with the most specific and getting more desperate until a match is found
     if zip:
-        queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StreetFull = '" + street + "' AND State = '" + state + "'" + " AND ZipCode='"+zip+"'")
-        basenamequeries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StName = '" + streetBasename + "' AND State = '" + state + "'" + " AND ZipCode='"+zip+"'")
+        queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StreetFull = '" + street + "' AND State = '" + state + "'" + " AND ZipCode='"+zip+"'")
+        basenamequeries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StName = '" + streetBasename + "' AND State = '" + state + "'" + " AND ZipCode='"+zip+"'")
     if zipfilter:
-        queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StreetFull = '" + street + "' AND State = '" + state + "'" + " AND ZipCode IN ('" + ("','".join(zipfilter)) + "')")
-        basenamequeries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StName = '" + streetBasename + "' AND State = '" + state + "'" + " AND ZipCode IN ('" + ("','".join(zipfilter)) + "')")
+        queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StreetFull = '" + street + "' AND State = '" + state + "'" + " AND ZipCode IN ('" + ("','".join(zipfilter)) + "')")
+        basenamequeries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StName = '" + streetBasename + "' AND State = '" + state + "'" + " AND ZipCode IN ('" + ("','".join(zipfilter)) + "')")
 
     if not unit and re.match(".* ([0-9]{1,5}|[A-Z]{1})$", street):
         # Maybe the street has the apartment number in it for some reason
@@ -232,18 +232,18 @@ def getZIP4(number, street, unit, state, lat, lon, city=False, zip=False, county
         newstreetBasename = re.sub("^[NSEW]{1,2} ", "", typelessStreet)
         newstreetBasename = re.sub(" [NSEW]{1,2}$", "", newstreetBasename)
         if zip:
-            queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StreetFull = '" + newStreet + "' AND State = '" + state + "'" + " AND ZipCode='"+zip+"'")
-            basenamequeries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StName = '" + newstreetBasename + "' AND State = '" + state + "'" + " AND ZipCode='"+zip+"'")
+            queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StreetFull = '" + newStreet + "' AND State = '" + state + "'" + " AND ZipCode='"+zip+"'")
+            basenamequeries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StName = '" + newstreetBasename + "' AND State = '" + state + "'" + " AND ZipCode='"+zip+"'")
         if zipfilter:
-            queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StreetFull = '" + newStreet + "' AND State = '" + state + "'" + " AND ZipCode IN ('" + ("','".join(zipfilter)) + "')")
-            basenamequeries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StName = '" + newstreetBasename + "' AND State = '" + state + "'" + " AND ZipCode IN ('" + ("','".join(zipfilter)) + "')")
+            queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StreetFull = '" + newStreet + "' AND State = '" + state + "'" + " AND ZipCode IN ('" + ("','".join(zipfilter)) + "')")
+            basenamequeries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StName = '" + newstreetBasename + "' AND State = '" + state + "'" + " AND ZipCode IN ('" + ("','".join(zipfilter)) + "')")
 
     if not zip and not zipfilter:
         # Who needs ZIP Codes and city names anyways
-        queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StreetFull = '" + street + "' AND State = '" + state + "'")
-        queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StName = '" + street + "' AND State = '" + state + "'")
-        basenamequeries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StName = '" + streetBasename + "' AND State = '" + state + "'")
-        queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StreetFull LIKE '" + street + "%' AND State = '" + state + "'")
+        queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StreetFull = '" + street + "' AND State = '" + state + "'")
+        queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StName = '" + street + "' AND State = '" + state + "'")
+        basenamequeries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StName = '" + streetBasename + "' AND State = '" + state + "'")
+        queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressSecOddEven, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd, RecordType FROM ZIP4 WHERE StreetFull LIKE '" + street + "%' AND State = '" + state + "'")
         #queries.append("SELECT ZipCode, Plus4Low, StreetFull, AddressSecAbbr, AddressSecLowNumber, AddressSecHighNumber, AddressPrimaryLowNumber, AddressPrimaryHighNumber, AddressPrimaryEvenOdd FROM ZIP4 WHERE StName LIKE '" + streetBasename + "%' AND State = '" + state + "'")
 
     resultrows = []
@@ -302,25 +302,50 @@ def getZIP4(number, street, unit, state, lat, lon, city=False, zip=False, county
                 if base_rows:
                     # Narrow further by looking for exact number matches (low and high are the same and what we're looking for)
                     exact_rows = []
+                    street_rows = []
                     for row in base_rows:
                         if addressRangeIsExactNumber(row["AddressPrimaryLowNumber"], row["AddressPrimaryHighNumber"], number):
                             exact_rows.append(row)
+                        else:
+                            street_rows.append(row)
                     
                     if len(exact_rows) > 0:
                         resultrows = exact_rows
+                    elif len(street_rows) > 0:
+                        resultrows = street_rows
                     else:
                         resultrows = base_rows
-
-                    # If that left us with exactly one, we can return it immediately
-                    if len(resultrows) == 1:
-                        row = resultrows[0]
-                        return (
-                            row["ZipCode"],
-                            row["Plus4Low"],
-                            row["StreetFull"],
-                            "",     # no unit designator when no unit was given
-                            unit,   # still the original (empty) unit
-                        )
+            elif unit:
+                exact_rows = []
+                default_rows = []
+                street_rows = []
+                
+                for row in resultrows:
+                    if row["RecordType"] == "H" and addressRangeContainsNumber(row["AddressSecLowNumber"], row["AddressSecHighNumber"], row["AddressSecOddEven"], unit):
+                        exact_rows.append(row)
+                    elif row["RecordType"] == "H" and row["AddressSecLowNumber"] == "":
+                        default_rows.append(row)
+                    elif row["RecordType"] == "S":
+                        street_rows.append(row)
+                
+                if len(exact_rows) > 0:
+                    resultrows = exact_rows
+                elif len(default_rows) > 0:
+                    resultrows = default_rows
+                elif len(street_rows) > 0:
+                    resultrows = street_rows
+            
+            # If that left us with exactly one, we can return it immediately
+            if len(resultrows) == 1:
+                row = resultrows[0]
+                return (
+                    row["ZipCode"],
+                    row["Plus4Low"],
+                    row["StreetFull"],
+                    row["AddressSecAbbr"],
+                    unit
+                )
+                        
             suggestZip = resultrows[0]["ZipCode"]
             suggestStreet = resultrows[0]["StreetFull"]
             for row in resultrows:
