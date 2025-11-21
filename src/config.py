@@ -10,6 +10,7 @@ class AppConfig:
     useCensusToFillEmptyZIPs: bool
     advancedMode: bool
     noSkip4: bool
+    verbose: bool
 
 _CFG: Optional[AppConfig] = None
 

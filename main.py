@@ -58,27 +58,41 @@ def normalize(number, street, street2, city, state, zipcode, latitude, longitude
     if len(city) > 4 and street1.endswith(" " + city):
         # City name leaked into street field (Albany County Wyoming, for one)
         street1 = street1.removesuffix(" " + city)
+    if cfg.verbose:
+        print("Starting to normalize address:")
+        print("  ", number, street1, street2, city, state, zipcode, round(float(latitude),7), round(float(longitude), 7), plus4, county)
     addr = normalizeAddress(number, street1, street2, city, state, zipcode, round(float(latitude),7), round(float(longitude), 7), zipprefix, plus4, county)
     if len(addr['zip'] or "") < 5 or len(addr['plus4'] or "") != 4:
-        
+        if cfg.verbose:
+            print("  Address didn't match to a full ZIP+4 code. Trying more things.")
+            print("   ", re.sub("[^0-9]", "", addr['number']), addr['street'], addr['unit'], "", addr['state'], addr['zip'])
         # Try removing letters from address numbers, and ignore city field
-        addrstrip = normalizeAddress(re.sub("[^0-9]", "", addr['number']), addr['street'], addr['unit'], addr['city'], addr['state'], addr['zip'], addr['latitude'], addr['longitude'], False, addr['plus4'], county)
-        
-        # If that didn't work, try instead stripping the city name because it might be wrong
-        if addr['city'] != "" and (len(addrstrip['zip'] or "") < 5 or len(addrstrip['plus4'] or "") != 4):
-            addrstrip = normalizeAddress(addr['number'], addr['street'], addr['unit'], "", addr['state'], addr['zip'], addr['latitude'], addr['longitude'], False, addr['plus4'], county)
+        addrstrip = normalizeAddress(re.sub("[^0-9]", "", addr['number']), addr['street'], addr['unit'], "", addr['state'], addr['zip'], addr['latitude'], addr['longitude'], False, addr['plus4'], county)
         
         # Use libpostal to analyze address deeper
         if cfg.advancedMode and len(addrstrip['zip'] or "") < 5 or len(addrstrip['plus4'] or "") != 4:
             try:
+                if cfg.verbose:
+                    print("  Using libpostal to break down and analyze address.")
+                    print("   ",addrstrip)
+                from src.advancedparsing import advancedNormalize
                 addr = advancedNormalize(addr['number'], addr['street'], addr['unit'], addr['city'], addr['state'], addr['zip'], addr['latitude'], addr['longitude'], False, addr['plus4'], county)
             except Exception as e:
+                if cfg.verbose:
+                    print("  libpostal crashed.")
+                    raise e
                 pass
             # Do another normalize pass for good luck (maybe the previous one got the ZIP and now we can get the +4)
             if len(addr['zip'] or "") < 5 or len(addr['plus4'] or "") != 4:
+                if cfg.verbose:
+                    print("  Doing a final normalization attempt after libpostal.")
+                    print("   ", addr)
                 addr = normalizeAddress(addr['number'], addr['street'], addr['unit'], addr['city'], addr['state'], addr['zip'], addr['latitude'], addr['longitude'], False, addr['plus4'], county)
         else:
             addr = addrstrip
+    if cfg.verbose:
+        print("  Final result after normalization:")
+        print("   ", addr)
     return addr
 
 def processOwnChunk(chunk, chunkcount, outfilename, ignorestates, keeponlystates):
@@ -661,6 +675,7 @@ if __name__ == "__main__":
     parser.add_argument("--census", help="Enable looking up missing ZIP codes in the U.S. Census Geocoder when we have a full address, city, and state but no ZIP.", action='store_true')
     parser.add_argument("--libpostal", help="Use libpostal address parsing and expansions to match bad addresses to a ZIP+4. Automatically enables --appendplus4.", action='store_true')
     parser.add_argument("--noskip4", help="When processing own file format, don't skip normalizing records that have a ZIP+4 already.", action="store_true")
+    parser.add_argument("-v", help="Verbose output (for development)", action="store_true")
 
     args = parser.parse_args()
 
@@ -673,6 +688,11 @@ if __name__ == "__main__":
     citySuggestion = False
     advancedMode = False
     noSkip4 = False
+    verbose = False
+    
+    if args.v:
+        verbose = True
+        print("Verbose mode engaged!")
     
     if args.libpostal:
         advancedMode = True
@@ -727,7 +747,7 @@ if __name__ == "__main__":
     if args.city:
         citySuggestion = args.city.strip().toUpper()
         
-    cfg = src.config.AppConfig(appendPlus4=appendPlus4, appendUnitLabel=appendUnitLabel, countryCode=countryCode, citySuggestion=citySuggestion, useCensusToFillEmptyZIPs=useCensusToFillEmptyZIPs, advancedMode=advancedMode, noSkip4=noSkip4)
+    cfg = src.config.AppConfig(appendPlus4=appendPlus4, appendUnitLabel=appendUnitLabel, countryCode=countryCode, citySuggestion=citySuggestion, useCensusToFillEmptyZIPs=useCensusToFillEmptyZIPs, advancedMode=advancedMode, noSkip4=noSkip4, verbose=verbose)
     
     src.config.set_config(cfg)
 

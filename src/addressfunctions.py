@@ -116,7 +116,8 @@ POST_STANDARDIZATION_STREET_REGEXES = {
     " LP$": " LOOP",
     "^CRK ([0-9]+)$": r"COUNTY ROAD \1", # Athens TX does this for some reason
     "^PR ([0-9]+)$": r"PRIVATE ROAD \1", # Athens TX does this for some reason
-    "^SH ([0-9]+) ([NSEW])$": r"STATE HIGHWAY \1 \2" # Athens TX does this too for some reason
+    "^SH ([0-9]+) ([NSEW])$": r"STATE HIGHWAY \1 \2", # Athens TX does this too for some reason
+    "^GLN HOLLOW ": "GLEN HOLLOW "
 }
 
 STANDARDIZATION_NUMBER_REGEXES = {
@@ -211,6 +212,8 @@ def normalizeAddress(number, street, unit, city, state, zipcode, lat, lon, zippr
         lon, lat = lat, lon
     number = standardizeNumber(str(number).upper().strip())
     street = preStandardizeStreet(street.strip().upper())
+    if cfg.verbose:
+        print("      Preprocessed street:", street)
     unit = unit.strip().upper()
     city = city.strip().upper()
     state = state.strip().upper()
@@ -230,18 +233,32 @@ def normalizeAddress(number, street, unit, city, state, zipcode, lat, lon, zippr
     #
     # Standardize address
     #
+    if cfg.verbose:
+        print("      Standardizing street: ", street)
     try:
         # Python library
+        # Won't work at all without a zip code
+        incity = city
+        if not city:
+            incity = "XXXXXXXXXX"
+        instate = state
+        if not state:
+            instate = "XX"
+        inzip = zipcode
+        if not zipcode:
+            inzip = "00000"
         addr = normalize_address_record(
             {
                 "address_line_1": "".join(["999999999", " ", street]),
                 "address_line_2": unit,
-                "city": city,
-                "state": state,
-                "postal_code": zipcode
+                "city": incity,
+                "state": instate,
+                "postal_code": inzip
             }
         )
     except Exception as e:
+        if cfg.verbose:
+            print("      Error standardizing street with usaddress-scourgify: ", e)
         try:
             # Proprietary Mono library
             if standardization == False:
@@ -266,10 +283,15 @@ def normalizeAddress(number, street, unit, city, state, zipcode, lat, lon, zippr
     streetonly = addr['address_line_1']
     if streetonly.startswith(str(number) + " "):
         streetonly = streetonly[len(str(number) + " "):]
+    
+    if cfg.verbose:
+        print("      Standardized street to: ", streetonly)
     #
     # Run extra regexes on street to fix standardization problems
     #
-    streetonly = postStandardizeStreet(streetonly)        
+    streetonly = postStandardizeStreet(streetonly)
+    if cfg.verbose:
+        print("      Postprocessed street: ", streetonly)
 
     #
     # Special conditional rules
@@ -287,31 +309,38 @@ def normalizeAddress(number, street, unit, city, state, zipcode, lat, lon, zippr
     #
     # Standardize and validate and/or append ZIP Code
     #
-    zipcode = addr["postal_code"]
+    if addr["postal_code"] != "00000":
+        zipcode = addr["postal_code"]
     unitprefix = ""
     unit = addr['address_line_2']
 
-    if zipcode is not None:
+    if zipcode is not None and addr["postal_code"] != "00000":
         zipcode = addr["postal_code"][0:5]
+
+    if addr["state"] != "XX":
+        state = addr["state"]
+        
+    if addr["city"] != "XXXXXXXXXX":
+        city = addr["city"]
 
     # Skip these if we already have a ZIP+4 code, assume it's accurate
     if zipcode is not None and len(zipcode) == 5 and not plus4:
         zipinfo = getCityStateForZIP(zipcode)
-        if cfg.appendPlus4 or zipinfo == False or addr["state"] != zipinfo["state"] or (cfg.appendUnitLabel and addr["address_line_2"] != ""):
-            zipcode, plus4, streetonly, unitprefix, unit = getZIP4(number, streetonly, addr['address_line_2'], addr["state"], lat, lon, addr["city"], zipcode, county)
+        if cfg.appendPlus4 or zipinfo == False or state != zipinfo["state"] or (cfg.appendUnitLabel and addr["address_line_2"] != ""):
+            zipcode, plus4, streetonly, unitprefix, unit = getZIP4(number, streetonly, addr['address_line_2'], state, lat, lon, city, zipcode, county)
             zipinfo = getCityStateForZIP(zipcode)
             if zipinfo != False:
-                addr["city"] = zipinfo["city"]
-                addr["state"] = zipinfo["state"]
+                city = zipinfo["city"]
+                state = zipinfo["state"]
         else:
-            addr["city"] = zipinfo["city"]
-            addr["state"] = zipinfo["state"]
+            city = zipinfo["city"]
+            state = zipinfo["state"]
     elif not plus4:
-        zipcode, plus4, streetonly, unitprefix, unit = getZIP4(number, streetonly, addr['address_line_2'], addr["state"], lat, lon, addr["city"], False, county)
+        zipcode, plus4, streetonly, unitprefix, unit = getZIP4(number, streetonly, addr['address_line_2'], state, lat, lon, state, False, county)
         zipinfo = getCityStateForZIP(zipcode)
         if zipinfo != False:
-            addr["city"] = zipinfo["city"]
-            addr["state"] = zipinfo["state"]
+            city = zipinfo["city"]
+            state = zipinfo["state"]
     
     if not plus4 and streetonly == "UNITED STATES HWY" and re.match(r"^\d+$", unit):
         streetonly = f"US HIGHWAY {unit}"
@@ -324,8 +353,8 @@ def normalizeAddress(number, street, unit, city, state, zipcode, lat, lon, zippr
         "number": number,
         "street": streetonly,
         "unit": ' '.join(filter(None, (unitprefix, unit))),
-        "city": addr["city"],
-        "state": addr["state"],
+        "city": city,
+        "state": state,
         "zip": zipcode,
         "plus4": plus4,
         "latitude": lat,
