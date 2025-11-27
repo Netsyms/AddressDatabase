@@ -156,22 +156,61 @@ def getZIPsForCounty(county, state):
             ziplist.append(row["ZipCode"])
     return ziplist
 
+def _parse_addr_number(value):
+    """
+    Parse an address number like:
+      '0012'   -> (12, '')
+      '0012A'  -> (12, 'A')
+      '12B'    -> (12, 'B')
+      '12-1'   -> (12, '')   # dash part ignored for range purposes
+    Returns (primary_int, suffix_str) or None if no leading digits.
+    """
+    if value is None:
+        return None
+
+
+    s = str(value).strip()
+    s = s.replace("-", "") # Hawaii and such
+    m = re.match(r'(\d+)([A-Za-z]*)', s)
+    if not m:
+        return None
+
+    primary = int(m.group(1).lstrip('0') or '0')
+    suffix = m.group(2).upper()
+    return (primary, suffix)
+
 def addressRangeContainsNumber(low, high, evenodd, number):
+    cfg = src.config.get_config()
+    if number == low or number == high:
+        return True
+
+    low_key  = _parse_addr_number(low)
+    high_key = _parse_addr_number(high)
+    num_key  = _parse_addr_number(number)
+    
+    if low_key is None or high_key is None or num_key is None:
+        return False
+    
     numberevenodd = "B"
-    if re.match(r"^[0-9]+$", number):
-        if int(number) % 2 == 0:
+    if re.match(r".*[0-9]$", number):
+        # Check if address number ends in an even or odd number
+        if int(number[-1]) % 2 == 0:
             numberevenodd = "E"
         else:
             numberevenodd = "O"
-        number = number.zfill(10)
-    elif low == number or high == number:
-        return True
+    elif re.match(r".*[0-9]$", str(num_key[0])):
+        if int(str(num_key[0])[-1]) % 2 == 0:
+            numberevenodd = "E"
+        else:
+            numberevenodd = "O"
     
-    if evenodd == "B" or evenodd == numberevenodd:
-        if low <= number and high >= number: # This logic is bad and should be rewritten
-            return True
+    if cfg.verbose:
+        print(number, low, high, evenodd, numberevenodd, "; ", num_key, low_key, high_key)
     
-    return False
+    if evenodd != "B" and evenodd != numberevenodd:
+        return False
+    
+    return low_key <= num_key <= high_key
 
 # Check if the address number range is actually just a single address that matches the number provided.
 def addressRangeIsExactNumber(low, high, number):
