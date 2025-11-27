@@ -221,9 +221,9 @@ UNITS = [
     'OFC',
     'PH',
     'PIER',
-    'REAR',
+    # 'REAR',
     'RM',
-    'SIDE',
+    # 'SIDE',
     'SLIP',
     'SPC',
     'STOP',
@@ -235,6 +235,25 @@ UNITS = [
     'BASE', # Not a real unit designator but appears in some NAD AZ data for some reason
     '(VACANT)' # One dataset does this...
 ]
+
+LONG_UNITS = {
+    "APARTMENT": "APT",
+    "BUILDING": "BLDG",
+    "BASEMENT": "BSMT",
+    "DEPARTMENT": "DEPT",
+    "FLOOR": "FL",
+    "FRONT": "FRNT",
+    "HANGER": "HNGR",
+    "LOBBY": "LBBY",
+    "LOWER": "LOWR",
+    "OFFICE": "OFC",
+    "PENTHOUSE": "PH",
+    "PENT HOUSE": "PH",
+    "ROOM": "RM",
+    "SPACE": "SPC",
+    "SUITE": "STE",
+    "TRAILER": "TRLR"
+}
 
 STATES = {
     "ALABAMA": "AL",

@@ -7,7 +7,7 @@ import pandas as pd
 from pythonnet import load
 from scourgify import NormalizeAddress, normalize_address_record
 from src.zipfunctions import checkZIPCode, getZIP, getZIP4, getCityStateForZIP
-from src.constants import STATES, LONGHAND_STREET_TYPES, UNITS, ValidationException
+from src.constants import STATES, LONGHAND_STREET_TYPES, UNITS, LONG_UNITS, ValidationException
 import src.config
 import json
 import sys
@@ -127,6 +127,11 @@ STANDARDIZATION_NUMBER_REGEXES = {
     "^\.$": "", # Blank out .
 }
 
+STANDARDIZATION_UNIT_REGEXES = {
+    "^\s*(.+?)\s*[, ]\s*\1\s*$": r"\1", # Match repeated unit number with a space and/or comma between, example "12, 12"
+    "^,$": ""
+}
+
 ABBREV_PATTERN = ""
 ABBREV_PATTERN_LIST = []
 for (a, b) in LONGHAND_STREET_TYPES.items():
@@ -194,10 +199,22 @@ def removeUnitText(subaddr):
     if subaddr == None:
         return subaddr
     subaddr = subaddr.upper()
+    for (lng, short) in LONG_UNITS.items():
+        subaddr = subaddr.replace(lng, short)
     for label in UNITS:
         subaddr = subaddr.replace(label, "")
-    subaddr = subaddr.replace("  ", " ")
+    subaddr = subaddr.replace("  ", " ").replace("  ", " ")
     return subaddr.strip()
+
+def cleanUnit(unit):
+    unit = removeUnitText(unit)
+    pattern = re.compile(r'^\s*(.+?)\s*[, ]\s*\1\s*$')
+    m = pattern.match(unit)
+    if m:
+        unit = m.group(1)
+    for (find, replace) in STANDARDIZATION_UNIT_REGEXES.items():
+        unit = re.sub(find, replace, unit)
+    return unit
 
 def normalizeAddress(number, street, unit, city, state, zipcode, lat, lon, zipprefix=False, plus4="", county=False):
     cfg = src.config.get_config()
@@ -214,7 +231,9 @@ def normalizeAddress(number, street, unit, city, state, zipcode, lat, lon, zippr
     street = preStandardizeStreet(street.strip().upper())
     if cfg.verbose:
         print("      Preprocessed street:", street)
-    unit = unit.strip().upper()
+    unit = cleanUnit(unit.strip().upper())
+    if cfg.verbose and unit:
+        print("      Preprocessed unit:", unit)
     city = city.strip().upper()
     state = state.strip().upper()
     zipcode = (zipcode or "").strip()
@@ -324,7 +343,7 @@ def normalizeAddress(number, street, unit, city, state, zipcode, lat, lon, zippr
         city = addr["city"]
 
     # Skip these if we already have a ZIP+4 code, assume it's accurate
-    if zipcode is not None and len(zipcode) == 5 and not plus4:
+    if zipcode is not None and len(zipcode) == 5 and (not plus4 or cfg.noSkip4):
         zipinfo = getCityStateForZIP(zipcode)
         if cfg.appendPlus4 or zipinfo == False or state != zipinfo["state"] or (cfg.appendUnitLabel and addr["address_line_2"] != ""):
             zipcode, plus4, streetonly, unitprefix, unit = getZIP4(number, streetonly, addr['address_line_2'], state, lat, lon, city, zipcode, county)
