@@ -367,7 +367,11 @@ def normalizeAddress(number, street, unit, city, state, zipcode, lat, lon, zippr
 
     #if not src.config.appendPlus4:
     #    plus4 = ""        
-
+    
+    if unit and not unitprefix and re.match(r"^[A-Z0-9]+$", unit):
+        # Put a # before the unit number if it's by itself
+        unitprefix = "#"
+    
     return {
         "number": number,
         "street": streetonly,
