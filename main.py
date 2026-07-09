@@ -11,11 +11,12 @@ import pandas as pd
 import dask.dataframe as dd
 import gc
 from multiprocessing import get_context
+import unicodedata
 
 import sqlite3
 
 from src.addressfunctions import normalizeAddress
-from src.constants import ValidationException
+from src.constants import ValidationException, MEXICO_STATES
 import src.config
 
 maxthreads = multiprocessing.cpu_count()
@@ -24,6 +25,7 @@ os.environ["OPENBLAS_MAIN_FREE"] = "1"
 writelock = multiprocessing.Lock()
 badcount = 0
 skippedcount = 0
+sqliteSkipWithoutPlus4 = False
 
 countrycode = "US"
 
@@ -94,6 +96,29 @@ def normalize(number, street, street2, city, state, zipcode, latitude, longitude
         print("  Final result after normalization:")
         print("   ", addr)
     return addr
+
+def mexicanStateToAbbrevation(state):
+    state = f_remove_accents(state).upper().strip()
+    for (full, abbr) in MEXICO_STATES.items():
+        if state == full:
+            return abbr
+        elif state == abbr:
+            return abbr
+    print("No Mexico state abbreviation found for ", state)
+    return ""
+
+def f_remove_accents(old):
+    """
+    Removes common accent characters, lower form.
+    Uses: regex.
+    """
+    new = old.lower()
+    new = re.sub(r'[àáâãäå]', 'a', new)
+    new = re.sub(r'[èéêë]', 'e', new)
+    new = re.sub(r'[ìíîï]', 'i', new)
+    new = re.sub(r'[òóôõö]', 'o', new)
+    new = re.sub(r'[ùúûü]', 'u', new)
+    return new
 
 def processOwnChunk(chunk, chunkcount, outfilename, ignorestates, keeponlystates):
     global badcount, skippedcount, writelock
@@ -287,7 +312,8 @@ def importNadFile(filename, outfilename, ignorestates, keeponlystates, startatli
     print("Saved to output file " + outfilename)
 
 def processOpenAddressRows(rows, startindex, outfilename, ignorestates, source, stateOverride, zipprefix, citySuggestion, county = False):
-    global badcount, skippedcount, writelock
+    global badcount, skippedcount, writelock, countrycode
+    cfg = src.config.get_config()
     print(" " + str(startindex) + "                                                ", end="\r", flush=True)
     linecount = 0
     outdata = []
@@ -300,10 +326,15 @@ def processOpenAddressRows(rows, startindex, outfilename, ignorestates, source, 
                 emptylinecount = emptylinecount + 1
             if not data["geometry"] or not data["geometry"]["coordinates"][0] or not data["geometry"]["coordinates"][1]:
                 emptylinecount = emptylinecount + 1
-            state = data["properties"]["region"].upper()
+            state = data["properties"]["region"].upper().strip()
             city = data["properties"]["city"].upper().strip()
             if stateOverride:
                 state = stateOverride
+            if countrycode == "MX" or cfg.country == "MX":
+                state = mexicanStateToAbbrevation(state)
+                if state == "":
+                    badcount = badcount + 1
+                    continue
             if state in ignorestates:
                 skippedcount = skippedcount + 1
                 continue
@@ -319,9 +350,25 @@ def processOpenAddressRows(rows, startindex, outfilename, ignorestates, source, 
                 # Source is broken/missing, and the last good version has the house numbers without dashes
                 # Hawaii has a specific and unique address numbering system
                 data["properties"]["number"] = data["properties"]["number"][:2] + "-" +  data["properties"]["number"][2:]
-            
-            addr = normalize(data["properties"]["number"], data["properties"]["street"], data["properties"]["unit"], city, state, data["properties"]["postcode"], data["geometry"]["coordinates"][1], data["geometry"]["coordinates"][0], zipprefix, "", county)
-            
+            if cfg.country != "US":
+                addr = {
+                    "number": f_remove_accents(data["properties"]["number"]).strip().upper(),
+                    "street": f_remove_accents(data["properties"]["street"]).upper().strip(),
+                    "unit": f_remove_accents(data["properties"]["unit"]).strip().upper(),
+                    "city": f_remove_accents(city).upper().strip(),
+                    "state": state,
+                    "zip": data["properties"]["postcode"].strip().upper(),
+                    "plus4": "",
+                    "latitude": data["geometry"]["coordinates"][1],
+                    "longitude": data["geometry"]["coordinates"][0]
+                }
+                if cfg.country == "MX":
+                    if addr['number'] == "SN":
+                        continue
+                    if "SIN REFERENCIA" in addr['street']:
+                        continue
+            else:
+                addr = normalize(data["properties"]["number"], data["properties"]["street"], data["properties"]["unit"], city, state, data["properties"]["postcode"], data["geometry"]["coordinates"][1], data["geometry"]["coordinates"][0], zipprefix, "", county)
             
             if addr["state"] in ignorestates:
                 skippedcount = skippedcount + 1
@@ -531,18 +578,57 @@ def removeDupes(filepath):
     print("Removing duplicate and incomplete addresses from " + filepath)
     chunkcount = 0
     chunksize = 20000000
-    for chunk in pd.read_csv(filepath, chunksize=chunksize, keep_default_na=False, dtype="str", usecols=["number", "street", "street2", "city", "state", "zip", "latitude", "longitude", "source"]):
+    for chunk in pd.read_csv(filepath, chunksize=chunksize, keep_default_na=False, dtype="str", usecols=["number", "street", "street2", "city", "state", "zip", "plus4", "latitude", "longitude", "source"]):
         print(".", end="", flush=True)
         chunk.replace('', None, inplace=True)
         chunk.dropna(subset=['zip','number','street','city','state','latitude','longitude'], inplace=True)
         chunk.sort_values(by="plus4", ascending=False, inplace=True, na_position="last") # Make sure the address duplicate with a +4 is kept
         chunk.drop_duplicates(subset=["number", "street", "street2", "city", "state", "zip"], keep="first", inplace=True)
-        chunk.to_csv(filepath + ".dedup.csv", mode='a', index=False,header=not os.path.exists(filepath + ".dedup.csv"), columns=["number","street","street2","city","state","zip","latitude","longitude", "source"])
+        chunk.to_csv(filepath + ".dedup.csv", mode='a', index=False,header=not os.path.exists(filepath + ".dedup.csv"), columns=["number","street","street2","city","state","zip","plus4","latitude","longitude", "source"])
         chunkcount = chunkcount + 1
     print("\nDone removing duplicates from " + filepath + "! Processed " + str(chunkcount) + " chunks of " + str(chunksize) + " records.")
 
+def optimizesqlite(dbfile):
+    print("Optimizing SQLite address database...")
+    cfg = src.config.get_config()
+    connection = sqlite3.connect(dbfile)
+    print("Vacuuming...")
+    connection.executescript("VACUUM;")
+    
+    cursor = connection.cursor()
+    
+    print("Creating index 1/5...")
+    cursor.execute("""CREATE INDEX IF NOT EXISTS `latitude_longitude` ON `addresses` (
+	`latitude`,
+	`longitude`
+)""")
+    print("Creating index 2/5...")
+    cursor.execute("""CREATE INDEX IF NOT EXISTS `number_street` ON `addresses` (
+	`number`,
+	`street`
+)""")
+    print("Creating index 3/5...")
+    cursor.execute("""CREATE INDEX IF NOT EXISTS `state_city` ON `addresses` (
+	`state`,
+	`city`
+)""")
+    print("Creating index 4/5...")
+    cursor.execute("""CREATE INDEX IF NOT EXISTS `zipcode_number` ON `addresses` (
+	`zipcode`,
+	`number`
+)""")
+    print("Creating index 5/5...")
+    cursor.execute("""CREATE INDEX IF NOT EXISTS `country` ON `addresses` (
+	`country`
+)""")
+    
+    print("Analyzing and optimizing...")
+    connection.executescript("ANALYZE; PRAGMA optimize;")
+    connection.close()
+    print("Done!")
+
 def tosqlite(addressfile, dbfile):
-    global countrycode
+    global countrycode, sqliteSkipWithoutPlus4
     cfg = src.config.get_config()
     print("\nReading addresses from " + addressfile)
     file = addressfile
@@ -552,6 +638,13 @@ def tosqlite(addressfile, dbfile):
         file = open(addressfile, 'r')
 
     connection = sqlite3.connect(dbfile)
+    connection.executescript("PRAGMA journal_mode=OFF;")
+    connection.executescript("PRAGMA synchronous=OFF;")
+    connection.executescript("PRAGMA temp_store=MEMORY;")
+    connection.executescript("PRAGMA locking_mode=EXCLUSIVE;")
+    connection.executescript("PRAGMA cache_size=-1048576;")
+    connection.executescript("PRAGMA foreign_keys=OFF;")
+    connection.executescript("PRAGMA count_changes=OFF;")
 
     cursor = connection.cursor()
     cursor.execute("""CREATE TABLE IF NOT EXISTS `addresses` (
@@ -560,13 +653,13 @@ def tosqlite(addressfile, dbfile):
 	`street`	VARCHAR ( 200 ) NOT NULL,
 	`street2`	VARCHAR ( 20 ),
 	`city`	VARCHAR ( 50 ) NOT NULL,
-	`state`	CHAR ( 2 ) NOT NULL,
+	`state`	CHAR ( 3 ) NOT NULL,
     `plus4`	CHAR ( 4 ),
     `country` CHAR ( 2 ) NOT NULL DEFAULT "US",
 	`latitude`	DECIMAL ( 8 , 6 ) NOT NULL,
 	`longitude`	DECIMAL( 9 , 6 ) NOT NULL,
     `source`	VARCHAR( 40 ),
-    UNIQUE (zipcode, number, street, street2, country)
+    UNIQUE (zipcode, number, street, street2, city, state, country)
 )""")
     cursor.execute("DROP TABLE IF EXISTS `addresses_temp`")
     cursor.execute("""CREATE TABLE IF NOT EXISTS `addresses_temp` (
@@ -575,34 +668,15 @@ def tosqlite(addressfile, dbfile):
 	`street`	VARCHAR ( 200 ) NOT NULL,
 	`street2`	VARCHAR ( 20 ),
 	`city`	VARCHAR ( 50 ) NOT NULL,
-	`state`	CHAR ( 2 ) NOT NULL,
+	`state`	CHAR ( 3 ) NOT NULL,
     `plus4`	CHAR ( 4 ),
     `country` CHAR ( 2 ) NOT NULL DEFAULT "US",
 	`latitude`	DECIMAL ( 8 , 6 ) NOT NULL,
 	`longitude`	DECIMAL( 9 , 6 ) NOT NULL,
     `source`	VARCHAR( 40 )
 )""")
-    cursor.execute("""CREATE INDEX IF NOT EXISTS `latitude_longitude` ON `addresses` (
-	`latitude`,
-	`longitude`
-)""")
-    cursor.execute("""CREATE INDEX IF NOT EXISTS `number_street` ON `addresses` (
-	`number`,
-	`street`
-)""")
-    cursor.execute("""CREATE INDEX IF NOT EXISTS `state_city` ON `addresses` (
-	`state`,
-	`city`
-)""")
-    cursor.execute("""CREATE INDEX IF NOT EXISTS `zipcode_number` ON `addresses` (
-	`zipcode`,
-	`number`
-)""")
-    cursor.execute("""CREATE INDEX IF NOT EXISTS `country` ON `addresses` (
-	`country`
-)""")
 
-    chunksize = 5000
+    chunksize = 10000
     chunkcount = 0
     rowschanged = 0
     columns = ["number","street","street2","city","state","zip","latitude","longitude","source"]
@@ -616,7 +690,11 @@ def tosqlite(addressfile, dbfile):
         # Replace null street2 with empty string so the SQLite UNIQUE clause will work
         chunk.fillna({"street2": ""}, inplace=True)
         # Remove null values that aren't allowed
-        chunk.dropna(subset=['zipcode','number','street','city','state','latitude','longitude'], inplace=True)
+        if cfg.appendPlus4 and sqliteSkipWithoutPlus4:
+            # Skip records without a ZIP+4 (this allows running two passes: the first to insert all the +4 records, the second to fill in all the remaining missing addresses)
+            chunk.dropna(subset=['zipcode','number','street','city','state','latitude','longitude','plus4'], inplace=True)
+        else:
+            chunk.dropna(subset=['zipcode','number','street','city','state','latitude','longitude'], inplace=True)
         print(" " + str(chunkcount * chunksize) + "          ", end="\r", flush=True)
         # Write chunk to SQLite
         cursor.execute("DELETE FROM addresses_temp")
@@ -626,7 +704,7 @@ def tosqlite(addressfile, dbfile):
             "street": "VARCHAR(200)",
             "street2": "VARCHAR(20)",
             "city": "VARCHAR(50)",
-            "state": "CHAR(2)",
+            "state": "CHAR(3)",
             "plus4": "CHAR(4)",
             "country": "CHAR(2)",
             "latitude": "DECIMAL(8,6)",
@@ -635,20 +713,12 @@ def tosqlite(addressfile, dbfile):
             })
         chunkcount = chunkcount + 1
         cursor.execute("INSERT OR IGNORE INTO addresses SELECT * FROM addresses_temp")
-        rowschanged = rowschanged + cursor.rowcount
-        if chunkcount % 5000 == 0: # VACUUM every 10 million inserts
-            print(" Optimizing database...", end="\r", flush=True)
-            connection.executescript("VACUUM")
-            print("                       ", end="\r", flush=True)
     connection.executescript("DROP TABLE addresses_temp")
 
-    cursor.execute("DELETE FROM addresses WHERE number=\"0\"")
     rowschanged = rowschanged + cursor.rowcount
-    if rowschanged > 10000000:
-        print("\nOptimizing database...")
-        connection.executescript("VACUUM; ANALYZE; PRAGMA optimize;")
-    print("Done converting to SQLite! Processed " + str(chunkcount) + " chunks (" + str(chunksize) + " records per chunk).")
-    print(str(rowschanged) + " records inserted.")
+    cursor.execute("DELETE FROM addresses WHERE number=\"0\"")
+    print("\nDone converting to SQLite! Processed " + str(chunkcount) + " chunks (" + str(chunksize) + " records per chunk).")
+    #print(str(rowschanged) + " records inserted.")
     connection.close()
     print("Saved to output file " + dbfile)
     return rowschanged
@@ -683,6 +753,8 @@ if __name__ == "__main__":
         parser.add_argument("--census", help="Enable looking up missing ZIP codes in the U.S. Census Geocoder when we have a full address, city, and state but no ZIP.", action='store_true')
         parser.add_argument("--libpostal", help="Use libpostal address parsing and expansions to match bad addresses to a ZIP+4. Automatically enables --appendplus4.", action='store_true')
         parser.add_argument("--noskip4", help="When processing own file format, don't skip normalizing records that have a ZIP+4 already.", action="store_true")
+        parser.add_argument("--sqlskipno4", help="When reading into a SQLite file, skip records that are missing a ZIP+4.", action="store_true")
+        parser.add_argument("--sqloptimize", help="Optimize and add indexes to the specified SQLite address file.", action="store_true")
         parser.add_argument("-v", help="Verbose output (for development)", action="store_true")
 
         args = parser.parse_args()
@@ -728,6 +800,9 @@ if __name__ == "__main__":
             useCensusToFillEmptyZIPs = False
         if useCensusToFillEmptyZIPs:
             print("Census geocoder enabled! RIP your network maybe")
+            
+        if args.sqlskipno4:
+            sqliteSkipWithoutPlus4 = True
 
         statesToIgnore = []
         if args.ignorestates:
@@ -755,11 +830,14 @@ if __name__ == "__main__":
         if args.city:
             citySuggestion = args.city.strip().toUpper()
             
-        cfg = src.config.AppConfig(appendPlus4=appendPlus4, appendUnitLabel=appendUnitLabel, countryCode=countryCode, citySuggestion=citySuggestion, useCensusToFillEmptyZIPs=useCensusToFillEmptyZIPs, advancedMode=advancedMode, noSkip4=noSkip4, verbose=verbose)
+        cfg = src.config.AppConfig(appendPlus4=appendPlus4, appendUnitLabel=appendUnitLabel, countryCode=countryCode, citySuggestion=citySuggestion, useCensusToFillEmptyZIPs=useCensusToFillEmptyZIPs, advancedMode=advancedMode, noSkip4=noSkip4, verbose=verbose, country=countrycode)
         
         src.config.set_config(cfg)
-
-        if args.dedup:
+        
+        if args.sqloptimize:
+            for file in args.file:
+                optimizesqlite(file)
+        elif args.dedup:
             with concurrent.futures.ProcessPoolExecutor(max_workers=maxthreads) as executor:
                 for file in args.file:
                     executor.submit(removeDupes, file)
@@ -779,7 +857,7 @@ if __name__ == "__main__":
             for file in args.file:
                 rowschanged = rowschanged + tosqlite(file, outputfile)
                 filesimported = filesimported + 1
-            print("\nDone importing " + str(filesimported) + " files. " + str(rowschanged) + " records inserted.")
+            print("\nDone importing " + str(filesimported) + " files.")
         elif args.file:
             outputfile = "./data/out.csv"
             if args.outputfile:

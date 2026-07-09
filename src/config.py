@@ -11,6 +11,7 @@ class AppConfig:
     advancedMode: bool
     noSkip4: bool
     verbose: bool
+    country: str
 
 _CFG: Optional[AppConfig] = None
 

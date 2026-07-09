@@ -6,7 +6,7 @@ import sqlite3
 
 Image.MAX_IMAGE_PIXELS = 648000000 # 100 pixels per degree
 
-def render(filename, outfile, ppd):
+def render(filename, outfile, ppd, only4):
     print("Creating map overlay")
     pixelsperdegree = ppd
     width = 360 * pixelsperdegree
@@ -19,10 +19,12 @@ def render(filename, outfile, ppd):
     c = connection.cursor()
 
     print("Drawing map overlay")
-    c.execute('SELECT longitude, latitude FROM addresses')
+    c.execute('SELECT longitude, latitude, country, plus4 FROM addresses')
     count = 0
     try:
-        for (x,y) in c:
+        for (x,y,cnt,p4) in c:
+            if only4 and cnt == "US" and not p4:
+                continue
             try:
                 if float(y) < -90.0 or float(y) > 90.0:
                     x, y = y, x
@@ -55,7 +57,8 @@ parser.add_argument('src_db', help='Input SQLite database with "addresses" table
 parser.add_argument('png_filename', help='Output PNG filename.')
 parser.set_defaults(ppd=50)
 parser.add_argument('ppd', help='Pixels per degree of latitude/longitude.', type=int)
+parser.add_argument("--onlyplus4", help="Only render addresses with a ZIP+4.", action="store_true")
 
 if __name__ == "__main__":
     args = parser.parse_args()
-    render(args.src_db, args.png_filename, args.ppd)
+    render(args.src_db, args.png_filename, args.ppd, args.onlyplus4)

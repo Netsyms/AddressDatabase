@@ -308,3 +308,43 @@ STATES = {
     "WISCONSIN": "WI",
     "WYOMING": "WY"
 }
+
+
+MEXICO_STATES = {
+    "AGUASCALIENTES": "AGU",
+    "BAJA CALIFORNIA": "BCN",
+    "BAJA CALIFORNIA SUR": "BCS",
+    "CAMPECHE": "CAM",
+    "CHIAPAS": "CHP",
+    "CHIHUAHUA": "CHH",
+    "COAHUILA": "COA",
+    "COAHUILA DE ZARAGOZA": "COA",
+    "COLIMA": "COL",
+    "DISTRITO FEDERAL": "CMX",
+    "CIUDAD DE MEXICO": "CMX",
+    "DURANGO": "DUR",
+    "GUANAJUATO": "GUA",
+    "GUERRERO": "GRO",
+    "HIDALGO": "HID",
+    "JALISCO": "JAL",
+    "MEXICO": "MEX",
+    "MICHOACAN": "MIC",
+    "MICHOACAN DE OCAMPO": "MIC",
+    "MORELOS": "MOR",
+    "NAYARIT": "NAY",
+    "NUEVO LEON": "NLE",
+    "OAXACA": "OAX",
+    "PUEBLA": "PUE",
+    "QUERETARO": "QUE",
+    "QUINTANA ROO": "ROO",
+    "SAN LUIS POTOSI": "SLP",
+    "SINALOA": "SIN",
+    "SONORA": "SON",
+    "TABASCO": "TAB",
+    "TAMAULIPAS": "TAM",
+    "TLAXCALA": "TLA",
+    "VERACRUZ": "VER",
+    "VERACRUZ DE IGNACIO DE LA LLAVE": "VER",
+    "YUCATAN": "YUC",
+    "ZACATECAS": "ZAC"
+}
